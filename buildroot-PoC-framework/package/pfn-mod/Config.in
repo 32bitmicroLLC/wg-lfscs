@@ -1,0 +1,11 @@
+config BR2_PACKAGE_PFN_MOD
+	bool "pfn-mod"
+	depends on BR2_LINUX_KERNEL
+	help
+	  Build and install the pfn_slab_probe out-of-tree kernel module.
+
+	  The module exposes a debugfs interface used to inspect PFN-1
+	  and report slab/object information through kmem_dump_obj().
+
+	  The module is installed under /usr/pfn-mod and is intended to be
+	  loaded manually with insmod, not automatically via modprobe.

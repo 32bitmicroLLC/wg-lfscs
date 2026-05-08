@@ -15,8 +15,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#define SLAB_PROBE_FN "/sys/kernel/debug/pfn_slab_probe/pfn"
 #define KPAGEFLAGS_PATH "/proc/kpageflags"
 #define MEM_USE_PERCENT 75
+#define MAX_SAMPLES 32
 
 enum {
 	KPF_LOCKED		= 0,
@@ -203,7 +205,7 @@ static void usage(const char *prog) {
 		"  --start-pfn N     Start PFN (decimal or 0x...)\n"
 		"  --count N         Number of PFNs to render\n"
 		"  --cols N          Cells per row (default: auto from terminal width)\n"
-		"  --percentage N    occupy given percentage of memory before mapping\n"
+		"  --use-ram N       occupy given percentage of memory before mapping\n"
 		"  --legend-bottom   Put legend after raster\n"
 		"  --no-summary      Do not print class/boundary summary\n"
 		"  --stop-on-error   Stop on pread error\n"
@@ -270,14 +272,14 @@ typedef struct {
 	uint64_t class_counts[CLS_COUNT];
 	uint64_t slab_to_user_count;
 	uint64_t other_to_user_count;
-	uint64_t first_boundary_pfn[16];
-	page_class_t first_boundary_left[16];
-	page_class_t first_boundary_right[16];
+	uint64_t first_boundary_pfn[MAX_SAMPLES];
+	page_class_t first_boundary_left[MAX_SAMPLES];
+	page_class_t first_boundary_right[MAX_SAMPLES];
 	size_t first_boundary_used;
 } stats_t;
 
 static void record_boundary(stats_t *st, uint64_t left_pfn, page_class_t a, page_class_t b) {
-	if (st->first_boundary_used < 16) {
+	if (st->first_boundary_used < MAX_SAMPLES) {
 		size_t i = st->first_boundary_used++;
 		st->first_boundary_pfn[i] = left_pfn;
 		st->first_boundary_left[i] = a;
@@ -377,6 +379,7 @@ static void render_range(int fd, const opts_t *o, stats_t *st) {
 		print_legend();
 }
 
+/*
 static void print_summary(const stats_t *st) {
 	printf("\nSummary:\n");
 	for (int i = 0; i < CLS_COUNT; i++) {
@@ -401,7 +404,73 @@ static void print_summary(const stats_t *st) {
 		}
 	}
 }
+*/
 
+static int slab_probe_available(void)
+{
+	return access(SLAB_PROBE_FN, W_OK) == 0;
+}
+
+static void submit_slab_probe_pfn(uint64_t right_pfn)
+{
+	FILE *f = fopen(SLAB_PROBE_FN, "w");
+
+	if (!f)
+		return;
+
+	/*
+	 * The kernel helper expects the right/user PFN.
+	 * It internally inspects PFN - 1.
+	 */
+	fprintf(f, "%llu\n", (unsigned long long)right_pfn);
+	fclose(f);
+}
+
+static void print_summary(const stats_t *st)
+{
+	int have_slab_probe = slab_probe_available();
+
+	printf("\nSummary:\n");
+	for (int i = 0; i < CLS_COUNT; i++) {
+		printf("  %-12s  %10llu\n",
+			   class_name((page_class_t)i),
+			   (unsigned long long)st->class_counts[i]);
+	}
+
+	printf("  %-12s  %10llu\n", "slab->user",
+		   (unsigned long long)st->slab_to_user_count);
+	printf("  %-12s  %10llu\n", "other->user",
+		   (unsigned long long)st->other_to_user_count);
+
+	if (have_slab_probe)
+		printf("\nSLUB probe: %s available\n", SLAB_PROBE_FN);
+	else
+		printf("\nSLUB probe: %s not available\n", SLAB_PROBE_FN);
+
+	if (st->first_boundary_used) {
+		printf("\nFirst interesting boundaries:\n");
+
+		for (size_t i = 0; i < st->first_boundary_used; i++) {
+			uint64_t left_pfn = st->first_boundary_pfn[i];
+			uint64_t right_pfn = left_pfn + 1;
+			page_class_t left = st->first_boundary_left[i];
+			page_class_t right = st->first_boundary_right[i];
+
+			printf("  PFN 0x%llx -> 0x%llx : %s -> %s",
+				   (unsigned long long)left_pfn,
+				   (unsigned long long)right_pfn,
+				   class_name(left),
+				   class_name(right));
+
+			if (have_slab_probe && left == CLS_SLAB && right == CLS_USER_ANON) {
+				submit_slab_probe_pfn(right_pfn);
+				printf("  [submitted to slab probe]");
+			}
+
+			printf("\n");
+		}
+	}
+}
 long get_total_mem() {
 	FILE *fp = fopen("/proc/meminfo", "r");
 	if (!fp) {
