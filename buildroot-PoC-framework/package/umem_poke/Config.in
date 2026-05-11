@@ -1,0 +1,10 @@
+config BR2_PACKAGE_UMEM_POKE
+	bool "umem_poke"
+	depends on BR2_LINUX_KERNEL
+	depends on BR2_aarch64 || BR2_x86_64
+	help
+	  Build the umem_poke out-of-tree kernel module and the
+	  architecture-specific victim binary.
+
+comment "umem_poke needs a Linux kernel and aarch64 or x86_64"
+	depends on !(BR2_aarch64 || BR2_x86_64) || !BR2_LINUX_KERNEL
