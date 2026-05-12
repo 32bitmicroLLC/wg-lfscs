@@ -188,6 +188,9 @@ static ssize_t umem_poke_write(struct file *file,
 	pr_info("umem_poke: act: poke memory for pid=%d mem[%lx]=%lx\n",
 		act.pid, (unsigned long) act.addr, (unsigned long) act.value);
 
+	if (!dst_target)
+		return -EFAULT;
+
 	*dst_target = act.value;
 	put_user_linear_mapping(&dst);
 
