@@ -20,6 +20,8 @@ define DIRECT_MAP_VIEW_INSTALL_TARGET_CMDS
 	echo DIRECT_MAP_VIEW_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/direct_map_view \
 		$(TARGET_DIR)/usr/bin/direct_map_view
+        $(INSTALL) -m 0755 $(@D)/2svg.sh \
+                $(TARGET_DIR)/usr/bin/2svg.sh
 endef
 
 $(eval $(generic-package))
